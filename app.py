@@ -3,8 +3,12 @@ from flask_cors import CORS
 import jwt
 import datetime
 import pymysql
+import os
 import requests
-from auth import token_requerido  # importa o decorador
+from dotenv import load_dotenv
+from auth import token_requerido  
+
+load_dotenv('mysql.env')
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
@@ -18,13 +22,13 @@ REDIRECT_URI = 'http://localhost:5050/auth/callback'
 # Função de conexão ao banco
 def conectar():
     return pymysql.connect(
-        host='localhost',
-        user='root',
-        password='Phsp2004',
-        database='SistemaEstoque',
+        host=os.getenv('DB_HOST'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        database=os.getenv('DB_NAME'),
+        port=int(os.getenv('DB_PORT')),
         cursorclass=pymysql.cursors.DictCursor
     )
-
 # ---------- INICIAR AUTENTICAÇÃO COM MERCADO LIVRE ----------
 @app.route('/auth/login')
 def auth_login():
