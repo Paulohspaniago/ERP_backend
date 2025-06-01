@@ -125,6 +125,7 @@ def login():
 @app.route('/dashboard', methods=['GET'])
 @token_requerido
 def dashboard():
+    user_id = request.usuario['id']  
     conexao = conectar()
     with conexao:
         with conexao.cursor() as cursor:
@@ -138,16 +139,18 @@ def dashboard():
                   p.imagem_url as imagem_url,
                   COALESCE(e.quantidade, 0) AS quantidade
                 FROM Produto p
-                LEFT JOIN Estoque e
-                  ON p.COD = e.fk_cod_prod
-            """)
+                LEFT JOIN Estoque e ON p.COD = e.fk_cod_prod
+                WHERE p.user_id = %s
+            """, (user_id,))
             dados = cursor.fetchall()
     return jsonify(dados), 200
+
 
 @app.route('/novoproduto', methods=['POST'])
 @token_requerido
 def criar_produto():
-    dados = request.get_json()
+    user_id     = request.usuario['id']
+    dados       = request.get_json()
     nome        = dados.get('name')
     descricao   = dados.get('description')
     preco       = dados.get('price')
@@ -162,28 +165,25 @@ def criar_produto():
     conn = conectar()
     with conn:
         with conn.cursor() as cursor:
-            # ---- Insere em Produto
-            sql_p = """
-              INSERT INTO Produto (nome, descricao, preco, categoria, imagem_url)
-              VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(sql_p, (nome, descricao, preco, categoria, imagem_url))
+            cursor.execute("""
+              INSERT INTO Produto (nome, descricao, preco, categoria, imagem_url, user_id)
+              VALUES (%s, %s, %s, %s, %s, %s)
+            """, (nome, descricao, preco, categoria, imagem_url, user_id))
             novo_cod = cursor.lastrowid
 
-            # ---- Insere no Estoque
-            sql_e = """
+            cursor.execute("""
               INSERT INTO Estoque (fk_cod_prod, quantidade)
               VALUES (%s, %s)
-            """
-            cursor.execute(sql_e, (novo_cod, quantidade))
+            """, (novo_cod, quantidade))
 
         conn.commit()
 
     return jsonify({'mensagem': 'Produto criado com sucesso!', 'cod': novo_cod}), 201
 
-@app.route('/produto/<int:cod>', methods=['GET']) # --- Pega um produto específico 
+@app.route('/produto/<int:cod>', methods=['GET']) #-- Pega um produto especifico 
 @token_requerido
 def obter_produto(cod):
+    user_id = request.usuario['id']
     conn = conectar()
     with conn:
         with conn.cursor() as cur:
@@ -193,22 +193,27 @@ def obter_produto(cod):
                      COALESCE(e.quantidade,0) AS quantidade
               FROM Produto p
               LEFT JOIN Estoque e ON p.COD = e.fk_cod_prod
-              WHERE p.COD = %s
-            """, (cod,))
+              WHERE p.COD = %s AND p.user_id = %s
+            """, (cod, user_id))
             prod = cur.fetchone()
     if prod:
         return jsonify(prod), 200
     return jsonify({'mensagem':'Produto não encontrado'}), 404
 
 
-@app.route('/produto/<int:cod>', methods=['PUT']) #  --- Atualizar produto 
+@app.route('/produto/<int:cod>', methods=['PUT']) # Atualiza o produto 
 @token_requerido
 def atualizar_produto(cod):
+    user_id = request.usuario['id']
     dados = request.get_json()
     conn = conectar()
     with conn:
         with conn.cursor() as cur:
-            # --- Atualiza tabela Produto
+            # verifica se o produto pertence ao usuário
+            cur.execute("SELECT 1 FROM Produto WHERE COD = %s AND user_id = %s", (cod, user_id))
+            if not cur.fetchone():
+                return jsonify({'mensagem': 'Produto não encontrado ou não pertence a você.'}), 403
+
             cur.execute("""
               UPDATE Produto
               SET nome=%s, descricao=%s, preco=%s, categoria=%s, imagem_url=%s
@@ -217,13 +222,15 @@ def atualizar_produto(cod):
               dados['name'], dados['description'], dados['price'],
               dados['category'], dados['image_url'], cod
             ))
-            # --- Atualiza quantidade no Estoque
+
             cur.execute("""
               UPDATE Estoque SET quantidade=%s
               WHERE fk_cod_prod=%s
             """, (dados['quantity'], cod))
+
         conn.commit()
     return jsonify({'mensagem':'Produto atualizado com sucesso!'}), 200
+
 
 # ------------------------------------------------------------------------
 
