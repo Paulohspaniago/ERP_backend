@@ -335,7 +335,7 @@ def listar_compras():
     with con, con.cursor() as cur:
         cur.execute("""
           SELECT c.id, p.nome AS produto, c.quantidade, p.categoria,
-                 c.preco_unit AS preco_unit, DATE_FORMAT(c.data,'%Y-%m-%d') AS data,
+                 c.preco_unit AS preco_unit, DATE_FORMAT(c.data,'%%Y-%%m-%%d') AS data,
                  f.nome AS fornecedor
           FROM Compras c
           JOIN Produto p ON c.produto_id = p.COD
@@ -428,7 +428,7 @@ def listar_vendas():
             cur.execute("""
               SELECT p.id, pr.nome AS produto, c.nome AS cliente,
                      p.quantidade, p.valor_final AS preco,
-                     DATE_FORMAT(p.data, '%Y-%m-%d') AS data,
+                     DATE_FORMAT(p.data, '%%Y-%%m-%%d') AS data,
                      p.status
               FROM Pedido p
               JOIN Produto pr ON pr.COD = p.id_produto
