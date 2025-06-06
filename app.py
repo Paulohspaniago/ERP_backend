@@ -580,7 +580,7 @@ def relatorio_lucro_mensal():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT * FROM lucromensal WHERE user_id = %s", (uid,))
+            cur.execute("SELECT * FROM lucro_mensal WHERE user_id = %s", (uid,))
             dados = cur.fetchall()
     return jsonify(dados), 200
 
