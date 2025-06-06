@@ -529,7 +529,7 @@ def criar_venda():
 
                 # 4. Inserir o pedido
                 cur.execute("""
-                    INSERT INTO Pedido (data, quantidade, valor_final, status, id_produto, id_cliente, marketplace)
+                    INSERT INTO Pedido (data, quantidade, valor_final, status, id_produto, id_cliente, fk_marketplace_id)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (
                     d['data'],
