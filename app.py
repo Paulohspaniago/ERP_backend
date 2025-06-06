@@ -29,6 +29,7 @@ def conectar():
         port=int(os.getenv('DB_PORT')),
         cursorclass=pymysql.cursors.DictCursor
     )
+
 # ---------- INICIAR AUTENTICAÇÃO COM MERCADO LIVRE ----------
 @app.route('/auth/login')
 def auth_login():
@@ -158,7 +159,6 @@ def criar_produto():
     quantidade  = dados.get('quantity')
     imagem_url  = dados.get('image_url')
 
-    # ---- Validação simples da URL
     if not imagem_url or not isinstance(imagem_url, str) or not imagem_url.lower().endswith('.jpg'):
         return jsonify({'mensagem': 'A URL de imagem é obrigatória e deve terminar em .jpg'}), 400
 
@@ -300,35 +300,25 @@ def remover_financa(fid):
 
 #-----------------------------DASHBOARD COMPRAS------------
 # helper: devolve id do produto; cria se não existir
-def get_or_create_produto(nome, fornecedor_id, cur, categoria='Outros'):
+
+def get_or_create_produto(nome, fornecedor_id, cur, categoria='Outros', user_id=None):
     # 1) tenta achar o produto
-    cur.execute("SELECT COD, id_fornecedor FROM Produto WHERE nome=%s", (nome,))
+    cur.execute("SELECT COD, id_fornecedor FROM Produto WHERE nome=%s AND user_id=%s", (nome, user_id))
     row = cur.fetchone()
     if row:
-        # se já existe mas sem fornecedor, atualiza o FK
         if row['id_fornecedor'] is None:
-            cur.execute(
-              "UPDATE Produto SET id_fornecedor=%s WHERE COD=%s",
-              (fornecedor_id, row['COD'])
-            )
-        # atualiza categoria se necessário
-        cur.execute(
-            "UPDATE Produto SET categoria=%s WHERE COD=%s",
-            (categoria, row['COD'])
-        )
+            cur.execute("UPDATE Produto SET id_fornecedor=%s WHERE COD=%s", (fornecedor_id, row['COD']))
+        cur.execute("UPDATE Produto SET categoria=%s WHERE COD=%s", (categoria, row['COD']))
         return row['COD']
 
     # 2) não existe → insere incluindo o fornecedor_id e categoria
     cur.execute("""
-        INSERT INTO Produto
-          (nome, descricao, preco, categoria, id_fornecedor)
-        VALUES (%s, '', 0, %s, %s)
-    """, (nome, categoria, fornecedor_id))
+        INSERT INTO Produto (nome, descricao, preco, categoria, id_fornecedor, user_id)
+        VALUES (%s, '', 0, %s, %s, %s)
+    """, (nome, categoria, fornecedor_id, user_id))
     return cur.lastrowid
 
 
-
-# helper: devolve id do fornecedor; cria se não existir
 def get_or_create_fornecedor(nome, cur):
     cur.execute("SELECT id FROM Fornecedor WHERE nome=%s", (nome,))
     row = cur.fetchone()
@@ -337,8 +327,6 @@ def get_or_create_fornecedor(nome, cur):
     cur.execute("INSERT INTO Fornecedor (nome) VALUES (%s)", (nome,))
     return cur.lastrowid
 
-
-# ---------- LISTAR compras ----------------------
 @app.route('/comprasdashboard', methods=['GET'])
 @token_requerido
 def listar_compras():
@@ -346,13 +334,9 @@ def listar_compras():
     con = conectar()
     with con, con.cursor() as cur:
         cur.execute("""
-          SELECT c.id,
-                 p.nome  AS produto,
-                 c.quantidade,
-                 p.categoria,
-                 c.preco_unit AS preco_unit,
-                 DATE_FORMAT(c.data,'%%Y-%%m-%%d') AS data,
-                 f.nome  AS fornecedor
+          SELECT c.id, p.nome AS produto, c.quantidade, p.categoria,
+                 c.preco_unit AS preco_unit, DATE_FORMAT(c.data,'%Y-%m-%d') AS data,
+                 f.nome AS fornecedor
           FROM Compras c
           JOIN Produto p ON c.produto_id = p.COD
           JOIN Fornecedor f ON c.fornecedor_id = f.id
@@ -362,8 +346,6 @@ def listar_compras():
         rows = cur.fetchall()
     return jsonify(rows), 200
 
-
-# ---------- CRIAR compra -----------------------------------
 @app.route('/comprasdashboard', methods=['POST'])
 @token_requerido
 def criar_compra():
@@ -373,33 +355,22 @@ def criar_compra():
     with con:
         with con.cursor() as cur:
             fornecedor_id = get_or_create_fornecedor(d['fornecedor_nome'], cur)
-            produto_id    = get_or_create_produto(d['produto_nome'], fornecedor_id, cur, d['categoria'])
+            produto_id    = get_or_create_produto(d['produto_nome'], fornecedor_id, cur, d['categoria'], uid)
 
             cur.execute("""
-              INSERT INTO Compras
-                (produto_id, fornecedor_id, quantidade, preco_unit, data, user_id)
+              INSERT INTO Compras (produto_id, fornecedor_id, quantidade, preco_unit, data, user_id)
               VALUES (%s, %s, %s, %s, %s, %s)
-            """, (
-              produto_id,
-              fornecedor_id,
-              d['quantidade'],
-              d['preco_unit'],
-              d['data'],
-              uid
-            ))
+            """, (produto_id, fornecedor_id, d['quantidade'], d['preco_unit'], d['data'], uid))
+
             cur.execute("""
-              INSERT INTO Estoque
-                (fk_cod_prod, data, quantidade)
+              INSERT INTO Estoque (fk_cod_prod, data, quantidade)
               VALUES (%s, %s, %s)
-            """, (
-              produto_id,
-              d['data'],
-              d['quantidade']
-            ))
+            """, (produto_id, d['data'], d['quantidade']))
 
         con.commit()
 
     return jsonify({'mensagem': 'Compra criada e estoque atualizado!'}), 201
+
 
 
 # ---------- ATUALIZAR --------------------------------------
@@ -455,22 +426,18 @@ def listar_vendas():
     with con:
         with con.cursor() as cur:
             cur.execute("""
-              SELECT p.id, 
-                     pr.nome AS produto,
-                     c.nome AS cliente,
-                     p.quantidade, 
-                     p.valor_final AS preco,
+              SELECT p.id, pr.nome AS produto, c.nome AS cliente,
+                     p.quantidade, p.valor_final AS preco,
                      DATE_FORMAT(p.data, '%Y-%m-%d') AS data,
                      p.status
               FROM Pedido p
               JOIN Produto pr ON pr.COD = p.id_produto
               JOIN Cliente c ON c.id = p.id_cliente
-              WHERE p.status = 'finalizado' 
+              WHERE p.status = 'finalizado' AND pr.user_id = %s
               ORDER BY p.data DESC
-            """)
+            """, (uid,))
             vendas = cur.fetchall()
     return jsonify(vendas), 200
-
 #---------------EDITAR as Vendas------------------
 @app.route('/vendas/<int:id>', methods=['PUT'])
 @token_requerido
@@ -592,39 +559,41 @@ def criar_venda():
 @app.route('/relatorios/lucro-produto/<string:nome>', methods=['GET'])
 @token_requerido
 def relatorio_lucro_por_produto(nome):
+    uid = request.usuario['id']
     con = conectar()
     with con:
         with con.cursor() as cur:
             cur.execute("""
                 SELECT mes, lucro_total
                 FROM lucro_produto_mensal
-                WHERE produto = %s
+                WHERE produto = %s AND user_id = %s
                 ORDER BY mes
-            """, (nome,))
+            """, (nome, uid))
             dados = cur.fetchall()
     return jsonify(dados), 200
 
-#------------lucro mensal geral --------------
+#-------------- LUCRO GERAL por mes --------------------------
 @app.route('/relatorios/lucro-mensal', methods=['GET'])
 @token_requerido
 def relatorio_lucro_mensal():
+    uid = request.usuario['id']
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT * FROM lucromensal")
+            cur.execute("SELECT * FROM lucromensal WHERE user_id = %s", (uid,))
             dados = cur.fetchall()
     return jsonify(dados), 200
 
 @app.route('/produtos', methods=['GET'])
 @token_requerido
 def listar_produtos():
+    uid = request.usuario['id']
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT DISTINCT nome FROM Produto")
+            cur.execute("SELECT DISTINCT nome FROM Produto WHERE user_id = %s", (uid,))
             produtos = cur.fetchall()
     return jsonify(produtos), 200
-
 
 
 
