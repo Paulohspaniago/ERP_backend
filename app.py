@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, make_response
 from flask_cors import CORS
 import jwt
 import datetime
@@ -108,19 +108,64 @@ def login():
             usuario = cursor.fetchone()
 
     if usuario:
-        token = jwt.encode({
-            'id': usuario['id'],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=12)
+        user_id = usuario['id']
+
+        # Access Token: curto prazo (15 min)
+        access_token = jwt.encode({
+            'id': user_id,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
         }, app.config['SECRET_KEY'], algorithm='HS256')
 
-        # Retorna token e tipo de usuário
-        return jsonify({
-            'token': token,
+        # Refresh Token: longo prazo (7 dias)
+        refresh_token = jwt.encode({
+            'id': user_id,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)
+        }, app.config['SECRET_KEY'], algorithm='HS256')
+
+        # Criar a resposta
+        resposta = make_response(jsonify({
+            'token': access_token,
             'tipo': usuario['tipo']
-        }), 200
+        }))
+
+        # Enviar o refresh token como cookie HTTPOnly
+        resposta.set_cookie(
+            'refresh_token',
+            refresh_token,
+            httponly=True,
+            secure=True,  # Usar True se estiver usando HTTPS
+            samesite='Strict',
+            max_age=7*24*60*60  # 7 dias em segundos
+        )
+
+        return resposta
 
     return jsonify({'mensagem': 'Credenciais inválidas.'}), 401
 
+#-------------REFRESH_TOKEN------------------------------------
+@app.route('/refresh', methods=['POST'])
+def refresh_token():
+    refresh_token = request.cookies.get('refresh_token')
+    
+    if not refresh_token:
+        return jsonify({'mensagem': 'Refresh token ausente.'}), 401
+
+    try:
+        dados = jwt.decode(refresh_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_id = dados['id']
+    except jwt.ExpiredSignatureError:
+        return jsonify({'mensagem': 'Refresh token expirado. Faça login novamente.'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'mensagem': 'Token inválido.'}), 401
+
+    # Gera novo access token
+    novo_token = jwt.encode({
+        'id': user_id,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+    }, app.config['SECRET_KEY'], algorithm='HS256')
+
+    return jsonify({'token': novo_token}), 200
+    
 # -------------------------BUSCAR produtos -----------------------------------------------
 
 @app.route('/dashboard', methods=['GET'])
