@@ -166,6 +166,63 @@ def refresh_token():
 
     return jsonify({'token': novo_token}), 200
     
+#------------------- BUSCAR TODOS OS USUARIOS DA MSM EMPRESA --------------------
+
+@app.route('/users', methods=['GET'])
+@token_requerido
+def listar_usuarios_empresa():
+    uid = request.usuario['id']
+    con = conectar()
+    with con.cursor() as cur:
+        # Buscar CNPJ do usuário logado
+        cur.execute("SELECT cnpj FROM Usuario WHERE id = %s", (uid,))
+        row = cur.fetchone()
+        if not row or not row['cnpj']:
+            return jsonify({'erro': 'Usuário sem CNPJ associado'}), 400
+
+        cnpj = row['cnpj']
+
+        # Listar usuários da mesma empresa
+        cur.execute("""
+            SELECT id, nome, email, tipo
+            FROM Usuario
+            WHERE cnpj = %s
+        """, (cnpj,))
+        usuarios = cur.fetchall()
+
+    return jsonify(usuarios), 200
+
+#--------------- ATUALZIAR OS USERS -------------------------
+
+@app.route('/users/<int:id>', methods=['PUT'])
+@token_requerido
+def atualizar_tipo_usuario(id):
+    d = request.get_json()
+    novo_tipo = d.get('tipo')
+
+    if novo_tipo not in ['admin', 'funcionario']:
+        return jsonify({'erro': 'Tipo inválido'}), 400
+
+    uid = request.usuario['id']
+    con = conectar()
+    with con.cursor() as cur:
+        # Verifica se usuário logado é admin da empresa
+        cur.execute("SELECT cnpj, tipo FROM Usuario WHERE id = %s", (uid,))
+        dados = cur.fetchone()
+        if not dados or dados['tipo'] != 'admin':
+            return jsonify({'erro': 'Apenas admins podem alterar permissões'}), 403
+
+        cnpj = dados['cnpj']
+
+        # Atualiza o tipo do usuário dentro da mesma empresa
+        cur.execute("""
+            UPDATE Usuario SET tipo = %s
+            WHERE id = %s AND cnpj = %s
+        """, (novo_tipo, id, cnpj))
+
+    con.commit()
+    return jsonify({'mensagem': 'Permissão atualizada com sucesso'}), 200
+
 # -------------------------BUSCAR produtos -----------------------------------------------
 
 @app.route('/dashboard', methods=['GET'])
