@@ -79,16 +79,20 @@ def auth_callback():
 @app.route('/register', methods=['POST'])
 def cadastrar_usuario():
     dados = request.get_json()
-    nome = dados.get('nome')
+    nome  = dados.get('nome')
     email = dados.get('email')
     senha = dados.get('senha')
-    tipo = dados.get('tipo')
+    tipo  = dados.get('tipo')
+    cnpj  = dados.get('cnpj')
 
     conexao = conectar()
     with conexao:
         with conexao.cursor() as cursor:
-            sql = "INSERT INTO Usuario (nome, email, senha, tipo) VALUES (%s, %s, %s, %s)"
-            cursor.execute(sql, (nome, email, senha, tipo))
+            sql = """
+                INSERT INTO Usuario (nome, email, senha, tipo, cnpj)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (nome, email, senha, tipo, cnpj))
         conexao.commit()
 
     return jsonify({'mensagem': 'Usuário cadastrado com sucesso!'}), 201
