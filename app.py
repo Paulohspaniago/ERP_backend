@@ -98,6 +98,7 @@ def cadastrar_usuario():
     return jsonify({'mensagem': 'Usuário cadastrado com sucesso!'}), 201
 
 
+
 @app.route('/login', methods=['POST'])
 def login():
     dados = request.get_json()
@@ -120,10 +121,10 @@ def login():
             'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
         }, app.config['SECRET_KEY'], algorithm='HS256')
 
-        # Refresh Token: longo prazo (7 dias)
+        # Refresh Token: longo prazo (1 dia)
         refresh_token = jwt.encode({
             'id': user_id,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
         }, app.config['SECRET_KEY'], algorithm='HS256')
 
         # Criar a resposta
@@ -139,7 +140,7 @@ def login():
             httponly=True,
             secure=True,  # Usar True se estiver usando HTTPS
             samesite='Strict',
-            max_age=7*24*60*60  # 7 dias em segundos
+            max_age= 1*24*60*60  # 1 dia em segundos
         )
 
         return resposta
@@ -169,7 +170,7 @@ def refresh_token():
     }, app.config['SECRET_KEY'], algorithm='HS256')
 
     return jsonify({'token': novo_token}), 200
-    
+
 #------------------- BUSCAR TODOS OS USUARIOS DA MSM EMPRESA --------------------
 
 @app.route('/users', methods=['GET'])
@@ -403,6 +404,7 @@ def remover_financa(fid):
                         (fid, request.usuario['id']))
         conn.commit()
     return jsonify({'mensagem':'Deletado!'}), 200
+
 #-------BUSCA PRODUTO E VE SE EXISTE PARA SER USADO NAS COMPRAS -------
 
 @app.route('/produtos/existe', methods=['GET'])
@@ -514,6 +516,7 @@ def criar_compra():
 
     return jsonify({'mensagem': 'Compra criada e estoque atualizado!'}), 201
 
+
 # ---------- ATUALIZAR --------------------------------------
 
 @app.route('/comprasdashboard/<int:cid>', methods=['PUT'])
@@ -542,7 +545,6 @@ def atualizar_compra(cid):
             ))
         con.commit()
     return jsonify({'mensagem': 'Atualizada!'}), 200
-
 
 # ---------- REMOVER ----------------------------------------
 
@@ -721,7 +723,7 @@ def relatorio_lucro_mensal():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT * FROM lucro_mensal WHERE user_id = %s", (uid,))
+            cur.execute("SELECT * FROM lucromensal WHERE user_id = %s", (uid,))
             dados = cur.fetchall()
     return jsonify(dados), 200
 
