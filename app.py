@@ -403,21 +403,40 @@ def remover_financa(fid):
                         (fid, request.usuario['id']))
         conn.commit()
     return jsonify({'mensagem':'Deletado!'}), 200
+#-------BUSCA PRODUTO E VE SE EXISTE PARA SER USADO NAS COMPRAS -------
 
-#-----------------------------DASHBOARD COMPRAS------------
-# helper: devolve id do produto; cria se não existir
+@app.route('/produtos/existe', methods=['GET'])
+@token_requerido
+def produto_existe():
+    nome = request.args.get('nome')
+    uid = request.usuario['id']
 
-def get_or_create_produto(nome, fornecedor_id, cur, categoria='Outros', user_id=None):
-    # 1) tenta achar o produto
-    cur.execute("SELECT COD, id_fornecedor FROM Produto WHERE nome=%s AND user_id=%s", (nome, user_id))
-    row = cur.fetchone()
-    if row:
-        if row['id_fornecedor'] is None:
-            cur.execute("UPDATE Produto SET id_fornecedor=%s WHERE COD=%s", (fornecedor_id, row['COD']))
-        cur.execute("UPDATE Produto SET categoria=%s WHERE COD=%s", (categoria, row['COD']))
-        return row['COD']
+    if not nome:
+        return jsonify({'erro': 'Nome do produto é obrigatório'}), 400
 
-    # 2) não existe → insere incluindo o fornecedor_id e categoria
+    con = conectar()
+    with con:
+        with con.cursor() as cur:
+            cur.execute("SELECT 1 FROM Produto WHERE nome = %s AND user_id = %s", (nome, uid))
+            existe = cur.fetchone() is not None
+
+    return jsonify({'existe': existe}), 200
+
+#----------------------------- DASHBOARD COMPRAS ------------
+
+# helper: devolve id do produto; cria se não existir ou força novo se modo == 'novo'
+def get_or_create_produto(nome, fornecedor_id, cur, categoria='Outros', user_id=None, modo='empilhar'):
+    if modo == 'empilhar':
+        # tenta achar o produto existente
+        cur.execute("SELECT COD, id_fornecedor FROM Produto WHERE nome=%s AND user_id=%s", (nome, user_id))
+        row = cur.fetchone()
+        if row:
+            if row['id_fornecedor'] is None:
+                cur.execute("UPDATE Produto SET id_fornecedor=%s WHERE COD=%s", (fornecedor_id, row['COD']))
+            cur.execute("UPDATE Produto SET categoria=%s WHERE COD=%s", (categoria, row['COD']))
+            return row['COD']
+
+    # cria novo produto sempre se modo == 'novo' ou não encontrado no 'empilhar'
     cur.execute("""
         INSERT INTO Produto (nome, descricao, preco, categoria, id_fornecedor, user_id)
         VALUES (%s, '', 0, %s, %s, %s)
@@ -432,6 +451,7 @@ def get_or_create_fornecedor(nome, cur):
         return row['id']
     cur.execute("INSERT INTO Fornecedor (nome) VALUES (%s)", (nome,))
     return cur.lastrowid
+
 
 @app.route('/comprasdashboard', methods=['GET'])
 @token_requerido
@@ -452,32 +472,47 @@ def listar_compras():
         rows = cur.fetchall()
     return jsonify(rows), 200
 
+
 @app.route('/comprasdashboard', methods=['POST'])
 @token_requerido
 def criar_compra():
     d   = request.get_json()
     uid = request.usuario['id']
+    modo = d.get('modo', 'empilhar')  # novo campo, padrão é empilhar
+
     con = conectar()
     with con:
         with con.cursor() as cur:
             fornecedor_id = get_or_create_fornecedor(d['fornecedor_nome'], cur)
-            produto_id    = get_or_create_produto(d['produto_nome'], fornecedor_id, cur, d['categoria'], uid)
+            produto_id = get_or_create_produto(
+                d['produto_nome'],
+                fornecedor_id,
+                cur,
+                d.get('categoria', 'Outros'),
+                uid,
+                modo
+            )
 
             cur.execute("""
               INSERT INTO Compras (produto_id, fornecedor_id, quantidade, preco_unit, data, user_id)
               VALUES (%s, %s, %s, %s, %s, %s)
             """, (produto_id, fornecedor_id, d['quantidade'], d['preco_unit'], d['data'], uid))
 
-            cur.execute("""
-              INSERT INTO Estoque (fk_cod_prod, data, quantidade)
-              VALUES (%s, %s, %s)
-            """, (produto_id, d['data'], d['quantidade']))
+            # atualizar ou criar estoque
+            cur.execute("SELECT quantidade FROM Estoque WHERE fk_cod_prod = %s", (produto_id,))
+            estoque = cur.fetchone()
+            if estoque:
+                nova_quantidade = estoque['quantidade'] + d['quantidade']
+                cur.execute("UPDATE Estoque SET quantidade = %s WHERE fk_cod_prod = %s", (nova_quantidade, produto_id))
+            else:
+                cur.execute("""
+                INSERT INTO Estoque (fk_cod_prod, data, quantidade)
+                VALUES (%s, %s, %s)
+                """, (produto_id, d['data'], d['quantidade']))
 
         con.commit()
 
     return jsonify({'mensagem': 'Compra criada e estoque atualizado!'}), 201
-
-
 
 # ---------- ATUALIZAR --------------------------------------
 
