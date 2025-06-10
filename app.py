@@ -419,7 +419,7 @@ def produto_existe():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT 1 FROM Produto WHERE nome = %s AND user_id = %s", (nome, uid))
+            cur.execute("SELECT 1 FROM Produto WHERE LOWER(nome) = %s AND user_id = %s", (nome.lower(), uid))
             existe = cur.fetchone() is not None
 
     return jsonify({'existe': existe}), 200
