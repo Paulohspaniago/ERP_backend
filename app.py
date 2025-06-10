@@ -719,7 +719,7 @@ def relatorio_lucro_mensal():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT * FROM lucromensal WHERE user_id = %s", (uid,))
+            cur.execute("SELECT * FROM lucro_mensal WHERE user_id = %s", (uid,))
             dados = cur.fetchall()
     return jsonify(dados), 200
 
@@ -730,9 +730,45 @@ def listar_produtos():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT DISTINCT nome FROM Produto WHERE user_id = %s", (uid,))
+            cur.execute("SELECT nome FROM Produto WHERE user_id = %s", (uid,))
             produtos = cur.fetchall()
     return jsonify(produtos), 200
+
+#---------- PEDIDOS  --------------
+@app.route('/pedidos', methods=['GET'])
+@token_requerido
+def listar_pedidos():
+    uid = request.usuario['id']
+    status = request.args.get('status')  # ex: 'a_enviar', 'concluido', etc
+    canal = request.args.get('canal')    # ex: 'Mercado Livre', 'Shopee', etc
+
+    con = conectar()
+    with con:
+        with con.cursor() as cur:
+            query = """
+                SELECT p.id, c.nome AS cliente, pr.nome AS produto,
+                       p.quantidade, p.status, m.nome AS canal
+                FROM Pedido p
+                JOIN Cliente c ON c.id = p.id_cliente
+                JOIN Produto pr ON pr.COD = p.id_produto
+                LEFT JOIN Marketplace m ON p.fk_marketplace_id = m.id
+                WHERE pr.user_id = %s
+            """
+            params = [uid]
+
+            if status:
+                query += " AND p.status = %s"
+                params.append(status)
+            if canal:
+                query += " AND m.nome = %s"
+                params.append(canal)
+
+            query += " ORDER BY p.data DESC"
+
+            cur.execute(query, tuple(params))
+            pedidos = cur.fetchall()
+
+    return jsonify(pedidos), 200
 
 
 
