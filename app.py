@@ -405,24 +405,20 @@ def remover_financa(fid):
         conn.commit()
     return jsonify({'mensagem':'Deletado!'}), 200
 
-#-------BUSCA PRODUTO E VE SE EXISTE PARA SER USADO NAS COMPRAS -------
-
-@app.route('/produtos/existe', methods=['GET'])
+#-------BUSCA PRODUTO E VE SE QNTS EXISTEM IGUAIS -------
+@app.route('/produtos/quantidade', methods=['GET'])
 @token_requerido
-def produto_existe():
+def quantidade_produtos_por_nome():
     nome = request.args.get('nome')
     uid = request.usuario['id']
-
-    if not nome:
-        return jsonify({'erro': 'Nome do produto é obrigatório'}), 400
 
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT 1 FROM Produto WHERE LOWER(nome) = %s AND user_id = %s", (nome.lower(), uid))
-            existe = cur.fetchone() is not None
+            cur.execute("SELECT COUNT(*) AS total FROM Produto WHERE LOWER(nome) = %s AND user_id = %s", (nome.lower(), uid))
+            row = cur.fetchone()
 
-    return jsonify({'existe': existe}), 200
+    return jsonify({'quantidade': row['total']}), 200
 
 #----------------------------- DASHBOARD COMPRAS ------------
 
