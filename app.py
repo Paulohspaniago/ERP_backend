@@ -4,9 +4,11 @@ import jwt
 import datetime
 import pymysql
 import os
+import json
 import requests
 from dotenv import load_dotenv
 from auth import token_requerido  
+
 
 load_dotenv('mysql.env')
 
@@ -17,7 +19,7 @@ app.config['SECRET_KEY'] = '8bf9485269a4ba37e6c37f918bf073932488be7a05a1bc3504ae
 # ----- Configurações da API do Mercado Livre -----
 CLIENT_ID = 'SEU_CLIENT_ID_AQUI'
 CLIENT_SECRET = 'SEU_CLIENT_SECRET_AQUI'
-REDIRECT_URI = 'http://localhost:5050/auth/callback'
+REDIRECT_URI = 'https://erp-backend-9ggy.onrender.com/auth/callback'
 
 # Função de conexão ao banco
 def conectar():
@@ -73,6 +75,18 @@ def auth_callback():
         'access_token': access_token,
         'refresh_token': refresh_token
     })
+
+@app.route('/webhooks/mercadolivre', methods=['POST'])
+def webhook_mercado_livre():
+    payload = request.get_json()
+
+    if not payload:
+        return jsonify({'erro': 'Dados inválidos'}), 400
+
+    print("Webhook recebido:", payload)
+
+    # Aqui futuramente salvaremos na tabela NotificacoesML
+    return jsonify({'mensagem': 'OK'}), 200
 
 
 
@@ -405,6 +419,7 @@ def remover_financa(fid):
         conn.commit()
     return jsonify({'mensagem':'Deletado!'}), 200
 
+
 #-------BUSCA PRODUTO E VE SE QNTS EXISTEM IGUAIS -------
 @app.route('/produtos/quantidade', methods=['GET'])
 @token_requerido
@@ -419,6 +434,7 @@ def quantidade_produtos_por_nome():
             row = cur.fetchone()
 
     return jsonify({'quantidade': row['total']}), 200
+
 
 #----------------------------- DASHBOARD COMPRAS ------------
 
@@ -730,7 +746,7 @@ def listar_produtos():
     con = conectar()
     with con:
         with con.cursor() as cur:
-            cur.execute("SELECT nome FROM Produto WHERE user_id = %s", (uid,))
+            cur.execute("SELECT DISTINCT nome FROM Produto WHERE user_id = %s", (uid,))
             produtos = cur.fetchall()
     return jsonify(produtos), 200
 
@@ -746,14 +762,15 @@ def listar_pedidos():
     with con:
         with con.cursor() as cur:
             query = """
-                SELECT p.id, c.nome AS cliente, pr.nome AS produto,
-                       p.quantidade, p.status, m.nome AS canal
-                FROM Pedido p
-                JOIN Cliente c ON c.id = p.id_cliente
-                JOIN Produto pr ON pr.COD = p.id_produto
-                LEFT JOIN Marketplace m ON p.fk_marketplace_id = m.id
-                WHERE pr.user_id = %s
-            """
+                SELECT  p.id, c.nome AS cliente, pr.nome AS produto,
+                        p.quantidade, p.status, m.nome AS canal
+                        FROM Pedido p
+                        JOIN Cliente c ON c.id = p.id_cliente
+                        JOIN Produto pr ON pr.COD = p.id_produto
+                        LEFT JOIN Marketplace m ON p.fk_marketplace_id = m.id
+                        WHERE pr.user_id = %s
+                        AND p.status != "finalizado"
+                """
             params = [uid]
 
             if status:
